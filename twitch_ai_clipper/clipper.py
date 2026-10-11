@@ -75,6 +75,65 @@ def cut_clip(
     return out_path
 
 
+def cut_clip_local(
+    source: Path | str,
+    out_path: Path | str,
+    start: float,
+    end: float,
+    quality: str = "1080p60",
+    precise: bool = False,
+    overwrite: bool = False,
+) -> Path:
+    """Вырезает интервал [start, end] из локального видеофайла через ffmpeg (без сети)."""
+    source = Path(source)
+    out_path = Path(out_path)
+    if out_path.exists() and not overwrite:
+        logger.info("Клип уже есть: {}", out_path.name)
+        return out_path
+    ensure_dir(out_path.parent)
+    if not source.exists():
+        raise RuntimeError(f"Локальный файл не найден: {source}")
+
+    duration = max(0.1, end - start)
+    # Для аудио дорожки перекодировать видео не нужно — копируем как есть.
+    if quality == "audio":
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-ss", f"{max(0.0, start):.3f}", "-i", str(source),
+            "-t", f"{duration:.3f}", "-vn",
+            "-c:a", "libmp3lame", "-b:a", "192k", str(out_path),
+        ]
+    else:
+        # --force-keyframes-at-cuts аналог для ffmpeg: точная перекодировка с ключевого
+        # кадра вместо быстрого (но иногда неточного) копирования потока.
+        codec = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "160k"]
+        if not precise:
+            # Быстрый путь: ищем к ближайшему ключевому кадру и копируем потоки.
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-ss", f"{max(0.0, start):.3f}", "-i", str(source),
+                "-t", f"{duration:.3f}",
+                "-c", "copy", "-avoid_negative_ts", "make_zero", str(out_path),
+            ]
+        else:
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-ss", f"{max(0.0, start):.3f}", "-i", str(source),
+                "-t", f"{duration:.3f}",
+            ] + codec + [str(out_path)]
+    logger.info(
+        "Режем клип {} ({}) из локального файла ...", out_path.name, f"{fmt_ts(start)}-{fmt_ts(end)}"
+    )
+    run_command(cmd, timeout=None)
+    if not out_path.exists():
+        candidates = sorted(out_path.parent.glob(out_path.stem + ".*"))
+        if not candidates:
+            raise RuntimeError(f"ffmpeg не создал клип {out_path}")
+        out_path = candidates[0]
+    logger.info("Клип готов: {} ({:.1f} МБ)", out_path.name, out_path.stat().st_size / 1_048_576)
+    return out_path
+
+
 def make_vertical(source: Path | str, out_path: Path | str | None = None, overwrite: bool = False) -> Path:
     """9:16 для Shorts/TikTok: размытый фон + видео по центру."""
     source = Path(source)

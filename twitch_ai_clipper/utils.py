@@ -283,3 +283,23 @@ def slugify(text: str, max_len: int = 60, fallback: str = "clip") -> str:
     if len(text) > max_len:
         text = text[:max_len].rstrip(" .-_")
     return text or fallback
+
+
+def is_local_video(target: str) -> Path | None:
+    """Если ``target`` — путь к существующему файлу на диске, вернуть его ``Path``.
+
+    Позволяет вставлять локальное видео (``C:\\videos\\clip.mp4``, ``./stream.mkv``)
+    вместо скачивания VOD по ссылке/ID Twitch. Кавычки, которыми Проводник Windows
+    окружает скопированный путь, снимаются. ``None`` — это не локальный файл
+    (значит, дальше разбираем как ID/ссылку/канал Twitch).
+    """
+    raw = (target or "").strip().strip('"').strip("'").strip()
+    if not raw:
+        return None
+    try:
+        candidate = Path(raw)
+        if candidate.is_file():
+            return candidate.resolve()
+    except OSError:
+        return None
+    return None

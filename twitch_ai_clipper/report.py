@@ -36,6 +36,7 @@ def render_markdown(
     """Собирает читаемый отчёт в Markdown."""
     url = vod_url or vod.url
     mode = get_mode(settings.mode)
+    is_local = getattr(vod, "local", False)
     lines: list[str] = []
     lines.append(f"# Хайлайты: {vod.title or vod.id}")
     lines.append("")
@@ -83,10 +84,14 @@ def render_markdown(
     for moment in moments:
         emoji = CATEGORY_EMOJI.get(moment.category, "⭐")
         stamp = moment.stamp(mode.name)
-        deep_link = f"{url}?t={int(moment.start)}s"
         clip = Path(moment.clip_path).name if moment.clip_path else ""
         title = moment.title.replace("|", "/")
-        clip_cell = f"[{stamp}]({deep_link})" + (f" · {clip}" if clip else "")
+        if is_local:
+            # Ссылка «?t=» на Twitch для локального файла бессмысленна — показываем таймкод.
+            clip_cell = stamp + (f" · {clip}" if clip else "")
+        else:
+            deep_link = f"{url}?t={int(moment.start)}s"
+            clip_cell = f"[{stamp}]({deep_link})" + (f" · {clip}" if clip else "")
         origin = "речь" if moment.transcript.strip() else "чат/звук"
         lines.append(
             f"| {moment.index} | `{stamp}` | {clip_cell} | {emoji} {moment.category} "
@@ -153,6 +158,7 @@ def render_html(
     """Простая галерея: плееры клипов, таймкоды, расшифровка (локальный просмотр)."""
     url = vod_url or vod.url
     mode = get_mode(settings.mode)
+    is_local = getattr(vod, "local", False)
     cards: list[str] = []
     for moment in moments:
         emoji = CATEGORY_EMOJI.get(moment.category, "⭐")
@@ -164,7 +170,7 @@ def render_html(
             media = f'<video controls preload="metadata"{poster} src="{html.escape(clip)}"></video>'
         elif thumb:
             media = f'<img class="poster" src="{html.escape(thumb)}" alt="превью">'
-        else:
+        elif not is_local:
             # Клип ещё не нарезан — показываем таймкод и ссылку на сам Twitch.
             link = f"{url}?t={int(moment.start)}s"
             media = (
@@ -172,12 +178,19 @@ def render_html(
                 f'<a href="{html.escape(link)}" target="_blank">смотреть на Twitch с '
                 f'{moment.stamp(mode.name)}</a></div>'
             )
+        else:
+            media = f'<div class="pending">Клип не нарезан &middot; {moment.stamp(mode.name)}</div>'
         chat_html = html.escape("\n".join(moment.chat_excerpt[:12]))
         transcript_html = html.escape(moment.transcript[:900])
         origin = (
             '<span class="tag speech">речь стримера</span>'
             if moment.transcript.strip()
+            else '<span class="tag chat">нет речи — из звука</span>' if is_local
             else '<span class="tag chat">нет речи — из чата</span>'
+        )
+        stamp_html = (
+            moment.stamp(mode.name) if is_local
+            else f'<a href="{html.escape(url)}?t={int(moment.start)}s" target="_blank">{moment.stamp(mode.name)}</a>'
         )
         cards.append(
             f"""<article class="card">
@@ -187,7 +200,7 @@ def render_html(
     <span class="score">{moment.score:.0f}</span>
   </header>
   <div class="meta">
-    <a href="{html.escape(url)}?t={int(moment.start)}s" target="_blank">{moment.stamp(mode.name)}</a>
+    {stamp_html}
     · {html.escape(moment.category)} · {moment.duration:.0f} с · {html.escape(moment.source)}
     · {origin}
   </div>
@@ -202,15 +215,22 @@ def render_html(
     chapters_block = ""
     if mode.chapter_list and moments:
         # Оглавление таймкодами в оформлении мода, каждая строка — ссылка на VOD.
-        items = "".join(
-            f'<a href="{html.escape(url)}?t={int(moment.start)}s" target="_blank">'
-            f"{html.escape(moment.chapter(mode.name))}</a>"
-            for moment in moments
-        )
+        if is_local:
+            items = "\n".join(html.escape(moment.chapter(mode.name)) for moment in moments)
+        else:
+            items = "".join(
+                f'<a href="{html.escape(url)}?t={int(moment.start)}s" target="_blank">'
+                f"{html.escape(moment.chapter(mode.name))}</a>"
+                for moment in moments
+            )
         chapters_block = (
             f'<nav class="chapters"><div class="chapters-title">Таймкоды — {html.escape(mode.title)}</div>'
             f"<pre>{items}</pre></nav>"
         )
+    source_html = (
+        f"Файл: {html.escape(url)}" if is_local
+        else f'<a href="{html.escape(url)}" target="_blank">{html.escape(url)}</a>'
+    )
     return f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8">
 <title>Хайлайты: {html.escape(vod.title or vod.id)}</title>
@@ -248,7 +268,7 @@ details summary {{ cursor: pointer; color: #a970ff; font-size: 13px; margin-top:
   <div class="meta">{html.escape(vod.channel)} · {html.escape(vod.game)} · {fmt_duration(vod.duration)}
   · моментов: {len(moments)} · модель {html.escape(settings.whisper_model)}
   · мод: {html.escape(mode.title)}</div>
-  <div class="meta"><a href="{html.escape(url)}" target="_blank">{html.escape(url)}</a></div>
+  <div class="meta">{source_html}</div>
   {summary_block}
   {chapters_block}
 </header>

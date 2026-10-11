@@ -145,6 +145,7 @@ class VodInfo:
     description: str = ""
     thumbnail: str = ""
     url: str = ""
+    local: bool = False  # источник — локальный файл на диске, а не VOD Twitch
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -159,6 +160,7 @@ class VodInfo:
             "description": self.description,
             "thumbnail": self.thumbnail,
             "url": self.url or f"https://www.twitch.tv/videos/{self.id}",
+            "local": self.local,
         }
 
 

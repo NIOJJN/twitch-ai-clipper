@@ -26,14 +26,14 @@ from .asr import (
 )
 from .audio import audio_dynamics, audio_rms, download_audio, probe_duration, to_wav
 from .chat import ChatMessage, analyze_chat, load_chat
-from .clipper import burn_subtitles, clip_output_path, cut_clip, make_thumbnail, make_vertical
+from .clipper import burn_subtitles, clip_output_path, cut_clip, cut_clip_local, make_thumbnail, make_vertical
 from .config import Settings
 from .detect import Moment, build_moments
 from .features import build_signals, pick_candidates
 from .llm import get_provider, summarize_stream, translate_segments
 from .report import write_reports
 from .twitch_api import TwitchClient, VodInfo
-from .utils import ensure_dir, fmt_duration, fmt_ts, read_json, write_json
+from .utils import ensure_dir, fmt_duration, fmt_ts, is_local_video, read_json, slugify, write_json
 
 
 @dataclass
@@ -44,6 +44,7 @@ class Workspace:
     root: Path
     settings: Settings
     client: TwitchClient = field(repr=False)
+    local_path: Path | None = None  # путь к локальному видеофайлу (если источник — файл)
 
     @property
     def work_dir(self) -> Path:
@@ -79,7 +80,11 @@ class Workspace:
 
 
 def prepare(target: str, settings: Settings) -> Workspace:
-    """Разбирает цель (ссылка/ID/канал), тянет метаданные и создаёт папки."""
+    """Разбирает цель (локальный файл/ссылка/ID/канал), тянет метаданные и создаёт папки."""
+    local = is_local_video(target)
+    if local is not None:
+        return _prepare_local(local, settings)
+
     client = TwitchClient(delay=settings.chat_delay)
     video_id = client.resolve_vod_id(target)
     vod = client.get_vod(video_id)
@@ -94,10 +99,44 @@ def prepare(target: str, settings: Settings) -> Workspace:
     return Workspace(vod=vod, root=root, settings=settings, client=client)
 
 
+def _prepare_local(path: Path, settings: Settings) -> Workspace:
+    """Цель — локальный видеофайл: метаданные из ffprobe, без Twitch и сети."""
+    duration = probe_duration(path)
+    if duration <= 0:
+        raise ValueError(f"Не удалось определить длительность файла: {path} (это точно видео?)")
+    vod = VodInfo(
+        id=slugify(path.stem, max_len=48, fallback="local"),
+        title=path.stem,
+        duration=duration,
+        channel="",
+        channel_login="",
+        url=str(path),
+        local=True,
+    )
+    if settings.limit_seconds:
+        vod.duration = min(vod.duration, float(settings.limit_seconds))
+    root = ensure_dir(Path(settings.output_dir) / vod.id)
+    write_json(root / "metadata.json", vod.to_dict())
+    logger.info(
+        "Локальное видео {} | {} | {}",
+        vod.id, fmt_duration(duration), path,
+    )
+    return Workspace(
+        vod=vod,
+        root=root,
+        settings=settings,
+        client=TwitchClient(delay=0.0),
+        local_path=path,
+    )
+
+
 # ------------------------------------------------------------------ шаги
 def step_chat(ws: Workspace) -> list[ChatMessage]:
     """Шаг 1: чат VOD."""
     settings = ws.settings
+    if ws.local_path is not None:
+        logger.info("Локальное видео — чат недоступен, детект опирается на звук и речь.")
+        return []
     cached = ws.chat_path.exists() and not settings.force
     if not cached:
         ws.client.download_chat(
@@ -124,6 +163,16 @@ def step_audio(ws: Workspace) -> Path:
     if ws.wav_path.exists() and not settings.force:
         logger.info("Аудио уже подготовлено: {}", ws.wav_path.name)
         return ws.wav_path
+    if ws.local_path is not None:
+        # Локальный файл уже на диске — yt-dlp не нужен, извлекаем дорожку сразу.
+        return to_wav(
+            ws.local_path,
+            ws.wav_path,
+            sample_rate=settings.audio_sample_rate,
+            start=None,
+            duration=settings.limit_seconds or None,
+            force=settings.force,
+        )
     raw = download_audio(
         ws.vod.url,
         ws.work_dir,
@@ -317,18 +366,30 @@ def step_clips(ws: Workspace, moments: Sequence[Moment]) -> list[Moment]:
     def render(job: tuple[int, Moment, Path]) -> None:
         index, moment, path = job
         try:
-            produced = cut_clip(
-                ws.vod.url,
-                path,
-                moment.start,
-                moment.end,
-                quality=settings.quality,
-                cookies_from_browser=settings.cookies_from_browser,
-                precise=settings.precise_cut,
-                overwrite=settings.force,
-            )
+            if ws.local_path is not None:
+                produced = cut_clip_local(
+                    ws.local_path,
+                    path,
+                    moment.start,
+                    moment.end,
+                    quality=settings.quality,
+                    precise=settings.precise_cut,
+                    overwrite=settings.force,
+                )
+                moment.clip_url = ""
+            else:
+                produced = cut_clip(
+                    ws.vod.url,
+                    path,
+                    moment.start,
+                    moment.end,
+                    quality=settings.quality,
+                    cookies_from_browser=settings.cookies_from_browser,
+                    precise=settings.precise_cut,
+                    overwrite=settings.force,
+                )
+                moment.clip_url = f"{ws.vod.url}?t={int(moment.start)}s"
             moment.clip_path = str(produced)
-            moment.clip_url = f"{ws.vod.url}?t={int(moment.start)}s"
             if settings.burn_subs and segments:
                 srt = write_clip_srt(
                     segments,
@@ -520,8 +581,10 @@ def rebuild_report(output_dir: Path | str, vod_id: str, settings: Settings) -> d
         game=meta.get("game", ""),
         created_at=meta.get("created_at", ""),
         url=meta.get("url", f"https://www.twitch.tv/videos/{vod_id}"),
+        local=bool(meta.get("local", False)),
     )
+    local_path = Path(vod.url) if vod.local and Path(vod.url).is_file() else None
     moments = load_moments(root)
-    ws = Workspace(vod=vod, root=root, settings=settings, client=TwitchClient(delay=0.0))
+    ws = Workspace(vod=vod, root=root, settings=settings, client=TwitchClient(delay=0.0), local_path=local_path)
     return step_report(ws, moments, None, extra={"vod_id": vod_id, "rebuilt": True})
 

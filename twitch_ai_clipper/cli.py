@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def add_common(sub: argparse.ArgumentParser) -> None:
-    sub.add_argument("target", help="ID VOD, ссылка на VOD или имя канала (возьмёт последнюю запись)")
+    sub.add_argument("target", help="ID VOD, ссылка на VOD, имя канала ИЛИ путь к локальному видеофайлу (например C:\\videos\\stream.mp4)")
     sub.add_argument("-o", "--output-dir", help="папка результатов (по умолчанию output/)")
     sub.add_argument("--whisper-model", help="модель Whisper (tiny/base/small/medium/large-v3) или путь к локальной CT2-модели")
     sub.add_argument("--asr-backend", choices=["auto", "faster-whisper", "openai-whisper"], help="движок распознавания речи")
