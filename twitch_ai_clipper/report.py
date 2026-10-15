@@ -193,7 +193,7 @@ def render_html(
             else f'<a href="{html.escape(url)}?t={int(moment.start)}s" target="_blank">{moment.stamp(mode.name)}</a>'
         )
         cards.append(
-            f"""<article class="card">
+            f"""<article class="card" data-index="{moment.index}">
   <header>
     <span class="emoji">{emoji}</span>
     <h2>{html.escape(moment.title)}</h2>
@@ -206,6 +206,9 @@ def render_html(
   </div>
   {media}
   <p class="reason">{html.escape(moment.reason)}</p>
+  <div class="likes">
+    <button class="like-btn" data-action="up" title="Лайк">&#10084;&#65039; <span class="like-count">0</span></button>
+  </div>
   <details><summary>Расшифровка</summary><pre>{transcript_html}</pre></details>
   <details><summary>Чат</summary><pre>{chat_html}</pre></details>
 </article>"""
@@ -261,6 +264,10 @@ details summary {{ cursor: pointer; color: #a970ff; font-size: 13px; margin-top:
 .chapters pre {{ max-height: 320px; }}
 .chapters pre a {{ display: block; text-decoration: none; padding: 1px 0; }}
 .chapters pre a:hover {{ color: #fff; text-decoration: underline; }}
+.likes {{ display: flex; gap: 8px; margin: 8px 0 4px; }}
+.like-btn {{ background: #232326; border: 1px solid #3a3a3d; border-radius: 999px; color: #efeff1; padding: 4px 12px; font-size: 13px; cursor: pointer; transition: background .15s, border-color .15s; }}
+.like-btn:hover {{ background: #2f2f33; }}
+.like-btn.active {{ border-color: #9147ff; background: #2b1d47; color: #ff5c8a; }}
 </style></head>
 <body>
 <header class="top">
@@ -275,6 +282,75 @@ details summary {{ cursor: pointer; color: #a970ff; font-size: 13px; margin-top:
 <main class="wrap">
 {body}
 </main>
+<script>
+(function () {{
+  // VOD определяем по URL: /vod/<id>/index.html -> <id>; при открытии файла с диска — null.
+  var m = location.pathname.match(/\/vod\/([^/]+)\//);
+  var VOD_ID = m ? m[1] : null;
+  var SERVER = VOD_ID !== null;
+  var LS_KEY = "likes:" + (VOD_ID || location.pathname);
+
+  function loadLocal() {{
+    try {{ return JSON.parse(localStorage.getItem(LS_KEY) || "{{}}"); }}
+    catch (e) {{ return {{}}; }}
+  }}
+  function saveLocal(state) {{
+    try {{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }} catch (e) {{}}
+  }}
+
+  function render(card, likes, mine) {{
+    card.querySelector(".like-count").textContent = likes;
+    card.querySelector(".like-btn").classList.toggle("active", mine === 1);
+  }}
+
+  function init(likesAll, mineAll) {{
+    document.querySelectorAll(".card[data-index]").forEach(function (card) {{
+      var idx = card.dataset.index;
+      render(card, likesAll[idx] || 0, mineAll[idx] || 0);
+      var btn = card.querySelector(".like-btn");
+      btn.addEventListener("click", function () {{
+        var mine = mineAll[idx] || 0;
+        var toUp = mine !== 1;               // клик по активному лайку снимает его
+        var delta = toUp ? 1 : -1;
+        if (SERVER) {{
+          fetch("/api/vods/" + encodeURIComponent(VOD_ID) + "/likes/" + idx +
+                "?action=" + (toUp ? "up" : "down"), {{ method: "POST" }})
+            .then(function (r) {{ return r.json(); }})
+            .then(function (data) {{
+              mineAll[idx] = toUp ? 1 : 0;
+              render(card, data.likes, mineAll[idx]);
+            }});
+        }} else {{
+          var state = loadLocal();
+          var cur = state[idx] || {{ likes: 0, mine: 0 }};
+          if (toUp) {{ cur.likes += 1; cur.mine = 1; }}
+          else {{ cur.likes = Math.max(0, cur.likes - 1); cur.mine = 0; }}
+          state[idx] = cur;
+          saveLocal(state);
+          render(card, cur.likes, cur.mine);
+        }}
+      }});
+    }});
+  }}
+
+  if (SERVER) {{
+    fetch("/api/vods/" + encodeURIComponent(VOD_ID) + "/likes")
+      .then(function (r) {{ return r.ok ? r.json() : {{}}; }})
+      .then(function (likesAll) {{ init(likesAll, mineFromLocal()); }})
+      .catch(function () {{ init({{}}, mineFromLocal()); }});
+  }} else {{
+    var st = loadLocal(), likes = {{}}, mine = {{}};
+    Object.keys(st).forEach(function (k) {{ likes[k] = st[k].likes || 0; mine[k] = st[k].mine || 0; }});
+    init(likes, mine);
+  }}
+
+  function mineFromLocal() {{
+    var st = loadLocal(), mine = {{}};
+    Object.keys(st).forEach(function (k) {{ mine[k] = st[k].mine || 0; }});
+    return mine;
+  }}
+}})();
+</script>
 </body></html>"""
 
 

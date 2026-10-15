@@ -53,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
             "--whisper-model large-v3 --language ru --max-clips 10\n"
             "  python -m twitch_ai_clipper run twitch.tv/канал --mode toparachevt\n"
             "  python -m twitch_ai_clipper chat 123456789\n"
-            "  python -m twitch_ai_clipper detect 123456789 --llm ollama --llm-model qwen2.5:7b\n"
+            "  python -m twitch_ai_clipper detect 123456789 --llm ollama --llm-model Qwythos-9B-v2-Heretic:Q4_K_M\n"
             "  python -m twitch_ai_clipper clip 123456789 --timecodes 0:10-0:45=Начало\n"
             "  python -m twitch_ai_clipper serve --port 8765\n"
         ),
@@ -78,7 +78,7 @@ def add_common(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--language", help="язык стрима (ru/en/...); по умолчанию ru, auto — определять самому")
     sub.add_argument("--translate-to", help="перевести расшифровку через LLM на этот язык")
     sub.add_argument("--llm", dest="llm_provider", help="auto|none|ollama|openai")
-    sub.add_argument("--llm-model", help="имя модели (например qwen2.5:7b-instruct)")
+    sub.add_argument("--llm-model", help="имя модели (например Qwythos-9B-v2-Heretic:Q4_K_M)")
     sub.add_argument("--llm-base-url", help="URL API (Ollama или OpenAI-совместимый)")
     sub.add_argument("--llm-api-key", help="ключ API (или переменная OPENAI_API_KEY)")
     sub.add_argument("--quality", choices=QUALITY_CHOICES, help="качество клипов")

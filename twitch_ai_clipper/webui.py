@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +40,9 @@ def find_vods(output_dir: Path | str) -> list[dict[str, Any]]:
         if not meta and not moments:
             continue
         clips = len(list((child / "clips").glob("*.mp4"))) if (child / "clips").exists() else 0
+        likes = sum(
+            (read_json(child / "likes.json", {}) or {}).values()
+        ) if (child / "likes.json").exists() else 0
         found.append(
             {
                 "id": child.name,
@@ -46,10 +51,40 @@ def find_vods(output_dir: Path | str) -> list[dict[str, Any]]:
                 "duration": meta.get("duration", 0),
                 "moments": len(moments),
                 "clips": clips,
+                "likes": likes,
                 "has_report": (child / "report.md").exists(),
             }
         )
     return found
+
+
+class LikesStore:
+    """Хранилище лайков клипов: output/<vod_id>/likes.json = {"<moment_index>": likes}.
+
+    Потокобезопасно (FastAPI может обслуживать запросы из нескольких потоков).
+    """
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+        self._lock = threading.Lock()
+
+    def _path(self, vod_id: str) -> Path:
+        return self._root / vod_id / "likes.json"
+
+    def get(self, vod_id: str) -> dict[str, int]:
+        data = read_json(self._path(vod_id), {}) or {}
+        return {str(k): int(v) for k, v in data.items() if isinstance(v, (int, float))}
+
+    def add(self, vod_id: str, index: int, delta: int) -> dict[str, int]:
+        """Применяет delta (+1/-1) к лайкам момента и возвращает новое значение."""
+        with self._lock:
+            data = self.get(vod_id)
+            key = str(index)
+            data[key] = max(0, data.get(key, 0) + delta)
+            self._path(vod_id).write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            return data
 
 
 def build_app(output_dir: Path | str) -> Any:
@@ -59,7 +94,9 @@ def build_app(output_dir: Path | str) -> Any:
     from fastapi.staticfiles import StaticFiles
 
     root = Path(output_dir).resolve()
+    root.mkdir(parents=True, exist_ok=True)
     app = FastAPI(title="Twitch AI Clipper", version="1.0.0")
+    likes = LikesStore(root)
 
     @app.get("/api/vods")
     def api_vods() -> Any:
@@ -69,6 +106,22 @@ def build_app(output_dir: Path | str) -> Any:
     def api_moments(vod_id: str) -> Any:
         return JSONResponse(read_json(root / vod_id / "moments.json", []) or [])
 
+    @app.get("/api/vods/{vod_id}/likes")
+    def api_likes(vod_id: str) -> Any:
+        """Лайки всех клипов VOD: {"<moment_index>": count}."""
+        if not (root / vod_id).is_dir():
+            return JSONResponse({"error": "vod not found"}, status_code=404)
+        return JSONResponse(likes.get(vod_id))
+
+    @app.post("/api/vods/{vod_id}/likes/{index}")
+    def api_like(vod_id: str, index: int, action: str = "up") -> Any:
+        """Ставит/снимает лайк: action=up (+1) или down (-1)."""
+        if not (root / vod_id).is_dir():
+            return JSONResponse({"error": "vod not found"}, status_code=404)
+        delta = -1 if action == "down" else 1
+        data = likes.add(vod_id, index, delta)
+        return JSONResponse({"index": index, "likes": data.get(str(index), 0), "all": data})
+
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
         items = []
@@ -77,7 +130,7 @@ def build_app(output_dir: Path | str) -> Any:
                 "<li>"
                 f'<a href="/vod/{vod["id"]}/index.html">{vod["title"] or vod["id"]}</a>'
                 f'<div class="meta">{vod["channel"]} · моментов: {vod["moments"]} · '
-                f'клипов: {vod["clips"]} · '
+                f'клипов: {vod["clips"]} · лайков: {vod.get("likes", 0)} · '
                 f'<a href="/vod/{vod["id"]}/report.md">report.md</a> · '
                 f'<a href="/api/vods/{vod["id"]}/moments">JSON</a></div>'
                 "</li>"

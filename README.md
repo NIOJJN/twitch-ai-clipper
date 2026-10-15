@@ -23,8 +23,9 @@
 12. [Что появляется в `output/`](#что-появляется-в-output)
 13. [Веб-галерея (`serve`)](#веб-галерея-serve)
 14. [LLM: Ollama или OpenAI](#llm-ollama-или-openai)
-15. [Нарезка клипов](#нарезка-клипов)
-16. [Диагностика и решение проблем](#диагностика-и-решение-проблем)
+15. [Кастомная модель: Qwythos-9B-v2-Heretic (Q4_K_M)](#кастомная-модель-qwythos-9b-v2-heretic-q4_k_m)
+16. [Нарезка клипов](#нарезка-клипов)
+17. [Диагностика и решение проблем](#диагностика-и-решение-проблем)
 
 ---
 
@@ -119,11 +120,13 @@ python -m pip install nvidia-cublas-cu12
 
 ### 6. (Опционально) Ollama для заголовков
 
-Мод `toparachevt` и качественные названия моментов опираются на локальную LLM:
+Мод `toparachevt` и качественные названия моментов опираются на локальную LLM.
+По умолчанию используется кастомная модель
+`Qwythos-9B-v2-Heretic:Q4_K_M` — установка описана в разделе
+[Кастомная модель](#кастомная-модель-qwythos-9b-v2-heretic-q4_k_m).
 
 ```bat
 winget install Ollama.Ollama
-ollama pull qwen2.5:7b-instruct
 ```
 
 Ollama по умолчанию слушает `http://127.0.0.1:11434` — этот адрес используется
@@ -330,7 +333,7 @@ python -m twitch_ai_clipper <команда> [аргументы]
 | `--language <ru\|en\|auto>` | язык стрима (по умолчанию `ru`) |
 | `--translate-to <язык>` | перевести расшифровку через LLM |
 | `--llm <auto\|none\|ollama\|openai>` | провайдер LLM |
-| `--llm-model <имя>` | модель (например `qwen2.5:7b-instruct`) |
+| `--llm-model <имя>` | модель (например `Qwythos-9B-v2-Heretic:Q4_K_M`) |
 | `--llm-base-url <url>` | URL API (Ollama или OpenAI-совместимый) |
 | `--llm-api-key <ключ>` | ключ API (или переменная `OPENAI_API_KEY`) |
 | `--quality <best\|1080p60\|1080p\|720p60\|720p\|480p\|360p\|audio>` | качество нарезки |
@@ -578,9 +581,21 @@ VOD, расшифровкой и выжимкой чата.
 
 | Маршрут | Что отдаёт |
 |---------|-----------|
-| `GET /api/vods` | список VOD в JSON |
+| `GET /api/vods` | список VOD в JSON (+ сумма лайков) |
 | `GET /api/vods/<id>/moments` | моменты конкретного VOD в JSON |
+| `GET /api/vods/<id>/likes` | лайки клипов VOD: `{"<index>": count}` |
+| `POST /api/vods/<id>/likes/<index>?action=up\|down` | поставить (+1) / снять (−1) лайк |
 | `GET /vod/<id>/...` | статика папки VOD (`index.html`, `report.md`, клипы) |
+
+### Лайки клипов
+
+На карточке каждого клипа есть кнопка ♥ — она ставит/снимает лайк
+(повторный клик снимает). Лайки хранятся в `output/<vod_id>/likes.json`
+и доступны через API выше. Счётчик на лендинге показывает сумму лайков VOD.
+
+Если `index.html` открыт двойным кликом (без сервера), лайки работают
+локально через `localStorage` браузера — без общего счётчика, но состояние
+сохраняется.
 
 ### Страница одного VOD без сервера
 
@@ -606,8 +621,8 @@ LLM не обязательна: без неё работают эвристик
 Локально через Ollama:
 
 ```bat
-ollama pull qwen2.5:7b-instruct
-run.bat run twitch.tv/канал --llm ollama --llm-model qwen2.5:7b-instruct
+ollama create Qwythos-9B-v2-Heretic:Q4_K_M -f Modelfile
+run.bat run twitch.tv/канал --llm ollama --llm-model Qwythos-9B-v2-Heretic:Q4_K_M
 ```
 
 Через OpenAI-совместимый API:
@@ -623,6 +638,91 @@ run.bat run 123456789 --llm openai --llm-model gpt-4o-mini
 ```bat
 run.bat transcribe 123456789 --translate-to en
 ```
+
+---
+
+## Кастомная модель: Qwythos-9B-v2-Heretic (Q4_K_M)
+
+По умолчанию пайплайн использует локальную модель
+**`Qwythos-9B-v2-Heretic:Q4_K_M`** (задано в `llm_model`). Это кастомная
+9B-модель в кванте `Q4_K_M` — компромисс между качеством русских заголовков
+и памятью/скоростью.
+
+### Что это и где взять
+
+| Параметр | Значение |
+|----------|----------|
+| Имя модели в конфиге | `Qwythos-9B-v2-Heretic:Q4_K_M` |
+| Источник (GGUF) | [WaveCut/Qwythos-9B-v2-Heretic-GGUF](https://huggingface.co/WaveCut/Qwythos-9B-v2-Heretic-GGUF) на HuggingFace |
+| Файл для кванта `Q4_K_M` | `Qwythos-9B-v2-Heretic.Q4_K_M.gguf` |
+| Размер на диске | ~5–6 ГБ (кванты: `Q4_K_M`, `Q5_K_M`, `Q6_K`, `Q8_0`) |
+| Оперативка / VRAM | рекомендуется ≥ 8 ГБ (впрок на CPU или GPU) |
+
+> Модель не из официального реестра Ollama, поэтому `ollama pull` для неё не
+> работает — её нужно импортировать из скачанного GGUF (см. ниже).
+
+### Установка (Windows)
+
+1. Убедитесь, что [Ollama установлен](#установка-windows):
+   ```bat
+   winget install Ollama.Ollama
+   ```
+   После установки перезапустите терминал.
+
+2. Скачайте GGUF-файл кванта `Q4_K_M` с HuggingFace
+   ([страница модели](https://huggingface.co/WaveCut/Qwythos-9B-v2-Heretic-GGUF),
+   файл `Qwythos-9B-v2-Heretic.Q4_K_M.gguf`) в любую папку, например
+   `models\`.
+
+3. Создайте `Modelfile` (в той же папке, что и GGUF) с одним содержимным:
+   ```
+   FROM ./Qwythos-9B-v2-Heretic.Q4_K_M.gguf
+   ```
+
+4. Импортируйте модель в Ollama:
+   ```bat
+   ollama create Qwythos-9B-v2-Heretic:Q4_K_M -f Modelfile
+   ```
+   Имя после `ollama create` должно **точно совпадать** со значением
+   `llm_model` (включая `:Q4_K_M`).
+
+5. Проверьте, что модель видна:
+   ```bat
+   ollama list
+   ```
+   В списке должна быть строка `Qwythos-9B-v2-Heretic:Q4_K_M`.
+
+### Подключение к пайплайну
+
+Модель подхватится автоматически при `llm_provider = "auto"` (или
+`ollama`), если `llm_model = "Qwythos-9B-v2-Heretic:Q4_K_M"` — это значение
+по умолчанию. Либо задайте явно:
+
+```bat
+:: в config.toml
+[llm]
+llm_provider = "ollama"
+llm_model = "Qwythos-9B-v2-Heretic:Q4_K_M"
+
+:: или флагом
+run.bat run twitch.tv/канал --llm ollama --llm-model Qwythos-9B-v2-Heretic:Q4_K_M
+```
+
+### Другие кванты
+
+Если `Q4_K_M` не хватает по качеству или наоборот не влезает по памяти —
+возьмите другой квант из того же репозитория (`Q5_K_M`, `Q6_K`, `Q8_0`),
+повторите шаги 3–4 с соответствующим `.gguf`-файлом и поменяйте тег в
+`llm_model` (например `Qwythos-9B-v2-Heretic:Q8_0`).
+
+### Если модель не грузится
+
+| Симптом | Что делать |
+|---------|------------|
+| `ollama list` не показывает модель | переимпортируйте: имя в `ollama create` должно быть `Qwythos-9B-v2-Heretic:Q4_K_M` |
+| `Ollama недоступен` в логах | запустите службу Ollama (`ollama serve` или иконка в трее), проверьте `http://127.0.0.1:11434` |
+| Ollama роняет процесс при генерации | не хватает памяти: закройте другие приложения или возьмите кванты `Q4_K_M`/`Q5_K_M` |
+| Медленные ответы на CPU | это нормально для 9B; уменьшите `llm_max_candidates`/`llm_batch` или используйте GPU |
 
 ---
 

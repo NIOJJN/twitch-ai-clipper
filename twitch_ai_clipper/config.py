@@ -59,7 +59,7 @@ class Settings:
 
     # --- LLM ---
     llm_provider: str = "auto"  # auto|none|ollama|openai
-    llm_model: str = "qwen2.5:7b-instruct"
+    llm_model: str = "Qwythos-9B-v2-Heretic:Q4_K_M"
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_timeout: float = 240.0
