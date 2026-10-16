@@ -641,11 +641,11 @@ run.bat transcribe 123456789 --translate-to en
 
 ---
 
-## Кастомная модель: Qwythos-9B-v2-Heretic (Q4_K_M)
+## Кастомная модель: hf.co/richardyoung/Qwen2.5-7B-Instruct-abliterated-GGUF
 
 По умолчанию пайплайн использует локальную модель
-**`Qwythos-9B-v2-Heretic:Q4_K_M`** (задано в `llm_model`). Это кастомная
-9B-модель в кванте `Q4_K_M` — компромисс между качеством русских заголовков
+**`hf.co/richardyoung/Qwen2.5-7B-Instruct-abliterated-GGUF`** (задано в `llm_model`). Это кастомная
+7B-модель в кванте `Q4_K_M` — компромисс между качеством русских заголовков
 и памятью/скоростью.
 
 ### Что это и где взять
@@ -669,28 +669,18 @@ run.bat transcribe 123456789 --translate-to en
    ```
    После установки перезапустите терминал.
 
-2. Скачайте GGUF-файл кванта `Q4_K_M` с HuggingFace
-   ([страница модели](https://huggingface.co/WaveCut/Qwythos-9B-v2-Heretic-GGUF),
-   файл `Qwythos-9B-v2-Heretic.Q4_K_M.gguf`) в любую папку, например
-   `models\`.
-
-3. Создайте `Modelfile` (в той же папке, что и GGUF) с одним содержимным:
-   ```
-   FROM ./Qwythos-9B-v2-Heretic.Q4_K_M.gguf
-   ```
-
-4. Импортируйте модель в Ollama:
+2. Импортируйте модель в Ollama:
    ```bat
-   ollama create Qwythos-9B-v2-Heretic:Q4_K_M -f Modelfile
+   ollama run hf.co/richardyoung/Qwen2.5-7B-Instruct-abliterated-GGUF
    ```
    Имя после `ollama create` должно **точно совпадать** со значением
    `llm_model` (включая `:Q4_K_M`).
 
-5. Проверьте, что модель видна:
+3. Проверьте, что модель видна:
    ```bat
    ollama list
    ```
-   В списке должна быть строка `Qwythos-9B-v2-Heretic:Q4_K_M`.
+   В списке должна быть строка `hf.co/richardyoung/Qwen2.5-7B-Instruct-abliterated-GGUF`.
 
 ### Подключение к пайплайну
 
