@@ -4,7 +4,7 @@
 [general]
 output_dir = "output"      # куда складывать результаты (по одной папке на VOD)
 limit_seconds = 0          # 0 = анализировать весь стрим; N = только первые N секунд (тесты)
-mode = "toparachevt"     # мод оформления: оглавление "2:04:19 - Любимый цвет" (default — как раньше)
+# mode = "toparachevt"     # мод оформления: оглавление "2:04:19 - Любимый цвет" (default — как раньше)
 
 [chat]
 chat_stride = 45.0         # шаг сканирования чата в «тихих» местах, сек
@@ -23,7 +23,7 @@ translate_to = ""          # например "ru" — перевести рас
 
 [llm]
 llm_provider = "auto"      # auto | none | ollama | openai
-llm_model = "Qwythos-9B-v2-Heretic:Q4_K_M"
+llm_model = "hf.co/richardyoung/Qwen2.5-7B-Instruct-abliterated-GGUF:latest"
 llm_base_url = ""          # http://127.0.0.1:11434 или https://api.openai.com/v1
 # llm_api_key = ""         # лучше задать через переменную окружения OPENAI_API_KEY
 llm_max_candidates = 32    # сколько кандидатов отдавать модели

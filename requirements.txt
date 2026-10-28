@@ -13,5 +13,8 @@ torch==2.2.2+cu121
 fastapi>=0.110
 uvicorn>=0.29
 
+# Графический интерфейс (python -m twitch_ai_clipper gui / gui.bat)
+PyQt6>=6.6
+
 # Внешние бинарники, которые должны быть в PATH:
 #   ffmpeg, ffprobe  (например: winget install Gyan.FFmpeg  /  choco install ffmpeg)
