@@ -17,6 +17,8 @@
 6. [Как задать цель (VOD)](#как-задать-цель-vod)
 7. [Настройки: config.toml](#настройки-configtoml)
 8. [Команды CLI](#команды-cli)
+8а. [Графический интерфейс (GUI)](#графический-интерфейс-gui)
+8б. [Готовый exe (без Python)](#готовый-exe-без-python)
 9. [Мод `toparachevt`](#мод-toparachevt)
 10. [Пресеты и плотность нарезки](#пресеты-и-плотность-нарезки)
 11. [Как это работает](#как-это-работает)
@@ -59,6 +61,8 @@
 | `faster-whisper`, `yt-dlp`, `numpy`, `soundfile`, `loguru`, `fastapi`, `uvicorn` | из `requirements.txt` | да |
 | **Ollama** или OpenAI-совместимый API | осмысленные заголовки/категории | нет (по желанию) |
 | **NVIDIA GPU + CUDA-библиотеки** | быстрая расшифровка многочасовых стримов | нет (иначе CPU) |
+| **PyQt6** | графическое окно (см. ниже) | нет, но настоятельно желательно |
+| **PyInstaller** | только для пересборки exe (`build_exe.ps1`) | нет |
 
 ---
 
@@ -160,6 +164,24 @@ python scripts/diag_fields.py <video_id>          :: какие поля схе�
 ---
 
 ## Быстрый старт
+
+**Вариант 1 — с окном (проще всего):**
+
+```bat
+:: 1. Зависимости (одноразово)
+python -m pip install -r requirements.txt
+
+:: 2. Открыть GUI
+gui.bat
+```
+
+Дальше всё в окне: выбрать режим, указать ссылку/канал/файл мышью,
+нажать «Запустить» — лог и статусы будут прямо в программе.
+
+**Вариант 2 — без Python вообще:** взять готовый `dist\TwitchAIClipper.exe`
+(см. [Готовый exe](#готовый-exe-без-python)) и запустить двойным кликом.
+
+**Вариант 3 — консоль:**
 
 ```bat
 :: 1. Зависимости
@@ -370,6 +392,67 @@ run.bat run 123456789 --limit-seconds 900 --max-clips 5 --vertical
 :: только анализ, без нарезки видео
 run.bat run twitch.tv/канал --no-clips
 ```
+
+---
+
+## Графический интерфейс (GUI)
+
+Настольное окно (PyQt6, тёмная тема в стиле Twitch) — команды вводить не нужно:
+
+```bat
+gui.bat
+:: или: python -m twitch_ai_clipper gui
+```
+
+Что в окне:
+
+- **Команда** — выпадающий список всех 8 режимов (`run`, `chat`, `transcribe`,
+  `detect`, `clip`, `report`, `list`, `serve`). Неактуальные для выбранного
+  режима поля гасятся и не передаются.
+- **Цель** — поле + кнопка «Файл…» (диалог для локального видео): ID, ссылка,
+  канал или путь.
+- **Параметры** — модель Whisper, язык, провайдер и модель LLM, качество,
+  мод (`toparachevt`), пресет, cookies из браузера, лимиты и пороги.
+- **Флажки** — `--no-clips`, `--vertical`, `--burn-subs`, `--precise-cut`,
+  `--dump-chat`, `--force` (полный флаг — в подсказке при наведении).
+- **Живой лог** — вывод пайплайна в окне; «Стоп» убивает и дочерние
+  `yt-dlp`/`ffmpeg`. Кнопки «Открыть галерею» и «Открыть папку output».
+- настройки **сохраняются автоматически** и восстанавливаются при следующем
+  запуске (QSettings).
+
+---
+
+## Готовый exe (без Python)
+
+В папке `dist\` лежат две самостоятельные программы (собираются PyInstaller-ом,
+командой `powershell -ExecutionPolicy Bypass -File build_exe.ps1`):
+
+| Файл | Размер | Что это |
+|---|---|---|
+| `TwitchAIClipper.exe` | ~185 МБ | окно GUI (двойной клик, без консоли) |
+| `TwitchAIClipperCli.exe` | ~233 МБ | консольный CLI (для терминала; GUI запускает задачи именно им) |
+
+Как пользоваться:
+
+1. Положите оба exe в одну папку (GUI ищет CLI рядом с собой).
+2. Рядом должен быть `ffmpeg` в `PATH` (см. [Установка](#установка-windows)) —
+   как и в python-версии, без него нарезка не работает.
+3. Запустите `TwitchAIClipper.exe` — появится окно GUI; либо работайте с
+   `TwitchAIClipperCli.exe` в терминале (аргументы те же, что и у
+   `python -m twitch_ai_clipper`), например:
+   `TwitchAIClipperCli.exe run 123456789 --max-clips 5`
+4. Whisper-модели exe скачивает сам при первом запуске в `models/` рядом.
+   Отладочный лог windowed-версии: `twitch_clipper_exe.log` рядом с exe.
+
+### Отличия exe от python-версии
+
+- **torch в exe не включён** (иначе сборка раздулась бы до нескольких ГБ).
+- Следствие: **расшифровка речи в exe идёт на CPU** — CUDA-библиотеки
+  (`cublas` и др.) тоже не упакованы в exe. Если нужен самый быстрый вариант —
+  пользуйтесь python-версией (`run.bat`), там GPU работает из коробки:
+  `python -m pip install nvidia-cublas-cu12` + `probe_env.py` проверяет.
+- `yt-dlp` exe вызывает из PATH (`yt-dlp` или `py -m yt_dlp`), поэтому yt-dlp
+  должен быть установлен в системе.
 
 ---
 
@@ -792,11 +875,14 @@ run.bat run 123456789 --config my-config.toml
 ## Структура репозитория
 
 ```
-run.bat                     обёртка запуска (UTF-8 + python -m twitch_ai_clipper)
+run.bat                     обёртка запуска CLI (UTF-8 + python -m twitch_ai_clipper)
+gui.bat                     запуск GUI (PyQt6, тёмная тема)
 config.example.toml         пример настроек (скопируйте в config.toml)
 config.toml                 ваша локальная конфигурация (в git не попадает)
 requirements.txt            зависимости Python
-twitch_ai_clipper/          исходники (CLI, пайплайн, чат, ASR, детект, отчёт, webui)
+launcher.py                 точка входа для exe (GUI/CLI/рабочий режим)
+build_exe.ps1               сборка dist\TwitchAIClipper*.exe через PyInstaller
+twitch_ai_clipper/          исходники (CLI, GUI, пайплайн, чат, ASR, детект, отчёт, webui)
 scripts/probe_env.py        проверка окружения
 scripts/smoke_api.py        проверка Twitch-слоя
 scripts/diag_chat.py        диагностика чата по каналу
